@@ -103,7 +103,6 @@ Gitの追跡対象外です。
 
 ## 解説資料
 
-- [Technical guide (English PDF)](images/crtc60hz_technical_guide_en.pdf)
 - [技術解説資料（日本語 PDF）](images/crtc60hz_technical_guide_ja.pdf)
 
 ## 動作確認環境
