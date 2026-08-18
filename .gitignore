@@ -7,3 +7,4 @@ build/
 *.zip
 !images/crtc60hz.zip
 *.hdf
+XTAGS

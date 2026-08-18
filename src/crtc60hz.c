@@ -3,7 +3,6 @@
 #include <string.h>
 #include <x68k/iocs.h>
 
-
 /*
  * X68000 CRTC 60 Hz V-DISP measurement.
  *
@@ -15,109 +14,97 @@
 #define CRTC_R05       ((void *)0x00E8000AUL)
 #define CRTC_R06       ((void *)0x00E8000CUL)
 #define CRTC_R07       ((void *)0x00E8000EUL)
-
 #define MFP_GPIP       ((const void *)0x00E88001UL)
 
-/* MFP GPIP bit 4 is V-DISP. Bit 6 (0x40) is CIRQ. */
 #define GPIP_VDISP     0x10
-
 #define SCREEN_WIDTH   512
 #define SCREEN_HEIGHT  512
-
 #define COLOR_BLACK    0x0000
 #define COLOR_WHITE    0xFFFF
-
 #define ESC_SCANCODE   0x01
-
 #define MEASURE_FRAMES 600
 
 /* Update FPS every 0.2 seconds and the flow line every two frames. */
-#define FPS_UPDATE_INTERVAL_CS        20
-#define FLOW_UPDATE_EVERY_FRAMES      2
-#define FLOW_SWEEP_STEPS              30
-#define FLOW_LINE_HEIGHT               1
+#define FPS_UPDATE_INTERVAL_CS   20
+#define FLOW_UPDATE_EVERY_FRAMES 2
+#define FLOW_SWEEP_STEPS         30
 
 /* _ONTIME sec uses centiseconds and wraps once per day. */
-#define CENTISEC_PER_DAY 8640000L
-
+#define CENTISEC_PER_DAY      8640000L
 #define WAIT_VDISP_TIMEOUT_CS 100
 
-
-static uint16_t saved_r04;
-static uint16_t saved_r05;
-static uint16_t saved_r06;
-static uint16_t saved_r07;
-
-
-static long ontime_diff_cs(
-  struct iocs_time start,
-  struct iocs_time end);
-
+static void *const crtc_regs[] = {
+  CRTC_R04, CRTC_R05, CRTC_R06, CRTC_R07
+};
+static uint16_t saved_crtc[4];
 
 static uint8_t read_gpip(void)
 {
   return (uint8_t)_iocs_b_bpeek(MFP_GPIP);
 }
 
-
 static uint16_t read_crtc(const void *addr)
 {
   return (uint16_t)_iocs_b_wpeek(addr);
 }
-
 
 static void write_crtc(void *addr, uint16_t value)
 {
   _iocs_b_wpoke(addr, value);
 }
 
-
-/* Wait for one complete V-DISP edge sequence. */
-static int wait_vdisp_with_timeout(long timeout_cs)
+static long ontime_diff_cs(struct iocs_time start, struct iocs_time end)
 {
-  struct iocs_time start;
-  struct iocs_time now;
-  uint8_t gpip;
-
-  start = _iocs_ontime();
-  gpip = read_gpip();
-
-  while ((gpip & GPIP_VDISP) != 0) {
-    gpip = read_gpip();
-    now = _iocs_ontime();
-
-    if (ontime_diff_cs(start, now) > timeout_cs) {
-      return -1;
-    }
-  }
-
-  while ((gpip & GPIP_VDISP) == 0) {
-    gpip = read_gpip();
-    now = _iocs_ontime();
-
-    if (ontime_diff_cs(start, now) > timeout_cs) {
-      return -1;
-    }
-  }
-
-  return 0;
+  return ((long)end.day - (long)start.day) * CENTISEC_PER_DAY
+    + (long)end.sec - (long)start.sec;
 }
 
-
+/* Wait for the next V-DISP rising edge. */
 static int wait_vdisp(void)
 {
-  return wait_vdisp_with_timeout(WAIT_VDISP_TIMEOUT_CS);
-}
+  struct iocs_time start;
+  int level;
 
+  start = _iocs_ontime();
+  level = read_gpip() & GPIP_VDISP;
+
+  for (;;) {
+    int next;
+
+    next = read_gpip() & GPIP_VDISP;
+
+    if (ontime_diff_cs(start, _iocs_ontime()) > WAIT_VDISP_TIMEOUT_CS) {
+      return -1;
+    }
+
+    if (next != level) {
+      level = next;
+
+      if (level != 0) {
+        return 0;
+      }
+    }
+  }
+}
 
 static void save_crtc_vertical(void)
 {
-  saved_r04 = read_crtc(CRTC_R04);
-  saved_r05 = read_crtc(CRTC_R05);
-  saved_r06 = read_crtc(CRTC_R06);
-  saved_r07 = read_crtc(CRTC_R07);
+  int i;
+
+  for (i = 0; i < 4; ++i) {
+    saved_crtc[i] = read_crtc(crtc_regs[i]);
+  }
 }
 
+static void restore_crtc_now(void)
+{
+  int i;
+
+  /* Restore the total period before the display positions. */
+  for (i = 0; i < 4; ++i) {
+    write_crtc(crtc_regs[i], saved_crtc[i]);
+  }
+}
 
 /*
  * Set 525 total lines with 480 visible lines.
@@ -140,31 +127,10 @@ static int set_60hz(void)
   return 0;
 }
 
-
-static void restore_crtc_now(void)
+static void restore_mode_and_crtc(int mode)
 {
-  /* Restore the total period before the display positions. */
-  write_crtc(CRTC_R04, saved_r04);
-  write_crtc(CRTC_R05, saved_r05);
-  write_crtc(CRTC_R06, saved_r06);
-  write_crtc(CRTC_R07, saved_r07);
-}
-
-
-static int is_reasonable_mode(int mode)
-{
-  return (mode >= 0) && (mode <= 0x7f);
-}
-
-
-static int restore_mode_and_crtc(int old_mode)
-{
-  int mode;
-
-  if (!is_reasonable_mode(old_mode)) {
+  if (mode < 0 || mode > 0x7F) {
     mode = 12;
-  } else {
-    mode = old_mode;
   }
 
   _iocs_crtmod(mode);
@@ -174,29 +140,20 @@ static int restore_mode_and_crtc(int old_mode)
   }
 
   _iocs_g_clr_on();
-
-  return 0;
 }
 
-
-static void fill_rect(
-  int x,
-  int y,
-  int width,
-  int height,
-  uint16_t color)
+static void draw_flow_line(int y, uint16_t color)
 {
   struct iocs_fillptr rect;
 
-  rect.x1 = (short)x;
+  rect.x1 = 0;
   rect.y1 = (short)y;
-  rect.x2 = (short)(x + width - 1);
-  rect.y2 = (short)(y + height - 1);
+  rect.x2 = SCREEN_WIDTH - 1;
+  rect.y2 = (short)y;
   rect.color = color;
 
   _iocs_fill(&rect);
 }
-
 
 static void put_line(int row, const char *text)
 {
@@ -205,7 +162,6 @@ static void put_line(int row, const char *text)
 
   memset(line, ' ', 60);
   line[60] = '\0';
-
   len = strlen(text);
 
   if (len > 60) {
@@ -213,90 +169,35 @@ static void put_line(int row, const char *text)
   }
 
   memcpy(line, text, len);
-
-  _iocs_b_putmes(
-    3,
-    2,
-    row,
-    59,
-    line);
+  _iocs_b_putmes(3, 2, row, 59, line);
 }
-
-
-static void hide_console_cursor(void)
-{
-  _iocs_b_curoff();
-  _iocs_os_curof();
-}
-
-
-static void restore_console_cursor(void)
-{
-  _iocs_os_curon();
-  _iocs_b_curon();
-}
-
 
 static int escape_pressed(void)
 {
-  int key;
-  int scancode;
-
-  if (_iocs_b_keysns() == 0) {
-    return 0;
-  }
-
-  key = _iocs_b_keyinp();
-  scancode = (key >> 8) & 0xFF;
-
-  return scancode == ESC_SCANCODE;
+  return _iocs_b_keysns() != 0
+    && (((_iocs_b_keyinp() >> 8) & 0xFF) == ESC_SCANCODE);
 }
 
-
-static long ontime_diff_cs(
-  struct iocs_time start,
-  struct iocs_time end)
+/* Return a measured frequency multiplied by 100. */
+static long rate_x100(long frames, long elapsed_cs)
 {
-  long day_diff;
-  long diff;
-
-  day_diff = (long)end.day - (long)start.day;
-  diff = day_diff * CENTISEC_PER_DAY
-    + (long)end.sec
-    - (long)start.sec;
-
-  return diff;
+  return elapsed_cs > 0
+    ? (frames * 10000L + elapsed_cs / 2L) / elapsed_cs
+    : 0;
 }
-
-
-/* Return the measured frequency multiplied by 100. */
-static long calculate_hz_x100(long elapsed_cs)
-{
-  if (elapsed_cs <= 0) {
-    return 0;
-  }
-
-  return ((long)MEASURE_FRAMES * 10000L + elapsed_cs / 2)
-    / elapsed_cs;
-}
-
 
 static void show_result(long elapsed_cs)
 {
   char buf[64];
-  long sec;
-  long cs;
   long hz_x100;
 
-  sec = elapsed_cs / 100;
-  cs = elapsed_cs % 100;
-  hz_x100 = calculate_hz_x100(elapsed_cs);
+  hz_x100 = rate_x100(MEASURE_FRAMES, elapsed_cs);
 
   sprintf(
     buf,
     "600 V-DISP : %ld.%02ld sec",
-    sec,
-    cs);
+    elapsed_cs / 100,
+    elapsed_cs % 100);
   put_line(3, buf);
 
   sprintf(
@@ -310,44 +211,33 @@ static void show_result(long elapsed_cs)
   put_line(7, "ESC : exit");
 }
 
-
 int main(void)
 {
   int old_mode;
   int frame;
   int aborted;
-
+  int fps_count;
+  int flow_prev_y;
+  long fps_elapsed_cs;
+  long last_fps_x100;
+  long elapsed_cs;
+  long hz_x100;
   struct iocs_time start_time;
   struct iocs_time end_time;
   struct iocs_time fps_time;
   struct iocs_time now_time;
-
-  int fps_count;
-  long fps_elapsed_cs;
-  int flow_prev_y;
-  int flow_step;
-  long last_fps_x100;
-
-  long elapsed_cs;
-  long hz_x100;
-
   char buf[64];
 
   old_mode = _iocs_crtmod(-1);
-  hide_console_cursor();
+  _iocs_b_curoff();
+  _iocs_os_curof();
 
   /* Start from the standard 512 x 512, 65536-color, 31 kHz mode. */
   _iocs_crtmod(12);
   _iocs_g_clr_on();
-
   save_crtc_vertical();
 
-  aborted = 0;
-
-  if (set_60hz() != 0) {
-    aborted = 1;
-    put_line(3, "V-DISP timeout at 60Hz setup");
-  }
+  aborted = set_60hz() != 0;
 
   put_line(1, "X68000 60 Hz V-DISP measurement");
   put_line(3, "Measuring 600 frames...");
@@ -355,8 +245,11 @@ int main(void)
   put_line(5, "FPS   : --");
   put_line(7, "ESC : abort");
 
+  if (aborted) {
+    put_line(3, "V-DISP timeout at 60Hz setup");
+  }
+
   fps_count = 0;
-  flow_step = 0;
   flow_prev_y = -1;
   last_fps_x100 = -1;
   elapsed_cs = 0;
@@ -372,16 +265,13 @@ int main(void)
     }
   }
 
-  for (frame = 1;
-       (frame <= MEASURE_FRAMES) && (aborted == 0);
-       ++frame) {
+  for (frame = 1; frame <= MEASURE_FRAMES && !aborted; ++frame) {
     if (wait_vdisp() != 0) {
       aborted = 1;
       put_line(7, "V-DISP timeout during measurement");
       break;
     }
 
-    /* Check ESC before drawing the next frame. */
     if (escape_pressed()) {
       aborted = 1;
       break;
@@ -393,29 +283,17 @@ int main(void)
     }
 
     if ((frame % FLOW_UPDATE_EVERY_FRAMES) == 0) {
-      int flow_phase;
       int flow_y;
 
-      ++flow_step;
-      flow_phase = flow_step % FLOW_SWEEP_STEPS;
-      flow_y = (flow_phase * SCREEN_HEIGHT) / FLOW_SWEEP_STEPS;
+      flow_y =
+        ((frame / FLOW_UPDATE_EVERY_FRAMES) % FLOW_SWEEP_STEPS)
+        * SCREEN_HEIGHT / FLOW_SWEEP_STEPS;
 
       if (flow_prev_y >= 0 && flow_prev_y != flow_y) {
-        fill_rect(
-          0,
-          flow_prev_y,
-          SCREEN_WIDTH,
-          FLOW_LINE_HEIGHT,
-          COLOR_BLACK);
+        draw_flow_line(flow_prev_y, COLOR_BLACK);
       }
 
-      fill_rect(
-        0,
-        flow_y,
-        SCREEN_WIDTH,
-        FLOW_LINE_HEIGHT,
-        COLOR_WHITE);
-
+      draw_flow_line(flow_y, COLOR_WHITE);
       flow_prev_y = flow_y;
     }
 
@@ -426,9 +304,7 @@ int main(void)
     if (fps_elapsed_cs >= FPS_UPDATE_INTERVAL_CS) {
       long fps_x100;
 
-      fps_x100 =
-        ((long)fps_count * 10000L + fps_elapsed_cs / 2L)
-        / fps_elapsed_cs;
+      fps_x100 = rate_x100(fps_count, fps_elapsed_cs);
 
       if (fps_x100 != last_fps_x100) {
         sprintf(
@@ -450,16 +326,8 @@ int main(void)
     }
   }
 
-  /* Remove the animation before displaying the result. */
   if (flow_prev_y >= 0) {
-    fill_rect(
-      0,
-      flow_prev_y,
-      SCREEN_WIDTH,
-      FLOW_LINE_HEIGHT,
-      COLOR_BLACK);
-
-    flow_prev_y = -1;
+    draw_flow_line(flow_prev_y, COLOR_BLACK);
     (void)wait_vdisp();
   }
 
@@ -467,35 +335,18 @@ int main(void)
     elapsed_cs = ontime_diff_cs(start_time, end_time);
     show_result(elapsed_cs);
 
-    while (1) {
-      if (wait_vdisp() != 0) {
-        break;
-      }
-
-      if (escape_pressed()) {
-        break;
-      }
+    while (wait_vdisp() == 0 && !escape_pressed()) {
     }
-  }
-
-  /* Let emulators display the cleared frame before restoring CRTC. */
-  if (flow_prev_y >= 0) {
-    fill_rect(
-      0,
-      flow_prev_y,
-      SCREEN_WIDTH,
-      FLOW_LINE_HEIGHT,
-      COLOR_BLACK);
   }
 
   _iocs_g_clr_on();
   (void)wait_vdisp();
-
   restore_mode_and_crtc(old_mode);
-  restore_console_cursor();
+  _iocs_os_curon();
+  _iocs_b_curon();
 
   if (!aborted) {
-    hz_x100 = calculate_hz_x100(elapsed_cs);
+    hz_x100 = rate_x100(MEASURE_FRAMES, elapsed_cs);
 
     printf(
       "600 V-DISP = %ld.%02ld sec\n",
