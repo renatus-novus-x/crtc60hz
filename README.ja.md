@@ -3,11 +3,11 @@
 [English](README.md) | [日本語](README.ja.md)
 
 <p align="center">
-  <img src="images/teaser.png" alt="X68000 31 kHz 60 Hz CRTC 計測ティザー" width="824" height="580">
+  <img src="images/teaser.gif" alt="X68000 31 kHz 60 Hz CRTC 計測ティザー" width="824" height="580">
 </p>
 
 <p align="center">
-  <strong><a href="https://uraraworks.github.io/WebX68k/?cpu=100&ram=12&hdd=https%3A%2F%2Fraw.githubusercontent.com%2Frenatus-novus-x%2Fcrtc60hz%2Frefs%2Fheads%2Fmain%2Fimages%2Fcrtc60hz.zip&run=1">▶ crtc60hz.zip を WebX68k ですぐ実行</a></strong>
+  <strong><a href="https://uraraworks.github.io/WebX68k/?cpu=10&ram=12&fd1=https://cdn.jsdelivr.net/gh/renatus-novus-x/crtc60hz@main/images/crtc60hz.zip&run=1">▶ crtc60hz.zip を WebX68k ですぐ実行</a></strong>
 </p>
 
 X68000 / Human68k の31 kHzモードで525ライン、約60 Hzの垂直リフレッシュを
@@ -92,7 +92,7 @@ Gitの追跡対象外です。
 ├── README.md
 ├── README.ja.md
 ├── images/
-│   ├── teaser.png
+│   ├── teaser.gif
 │   ├── crtc60hz.zip
 │   ├── crtc60hz_technical_guide_en.pdf
 │   └── crtc60hz_technical_guide_ja.pdf

@@ -3,11 +3,11 @@
 [English](README.md) | [日本語](README.ja.md)
 
 <p align="center">
-  <img src="images/teaser.png" alt="X68000 31 kHz 60 Hz CRTC measurement teaser" width="824" height="580">
+  <img src="images/teaser.gif" alt="X68000 31 kHz 60 Hz CRTC measurement teaser" width="824" height="580">
 </p>
 
 <p align="center">
-  <strong><a href="https://uraraworks.github.io/WebX68k/?cpu=100&ram=12&hdd=https%3A%2F%2Fraw.githubusercontent.com%2Frenatus-novus-x%2Fcrtc60hz%2Frefs%2Fheads%2Fmain%2Fimages%2Fcrtc60hz.zip&run=1">▶ Run crtc60hz.zip in WebX68k</a></strong>
+  <strong><a href="https://uraraworks.github.io/WebX68k/?cpu=10&ram=12&fd1=https://cdn.jsdelivr.net/gh/renatus-novus-x/crtc60hz@main/images/crtc60hz.zip&run=1">▶ Run crtc60hz.zip in WebX68k</a></strong>
 </p>
 
 An X68000/Human68k C program that generates a 525-line, approximately 60 Hz
@@ -94,7 +94,7 @@ ordinary `.zip` files are ignored by Git.
 ├── README.md
 ├── README.ja.md
 ├── images/
-│   ├── teaser.png
+│   ├── teaser.gif
 │   ├── crtc60hz.zip
 │   ├── crtc60hz_technical_guide_en.pdf
 │   └── crtc60hz_technical_guide_ja.pdf
