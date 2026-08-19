@@ -33,19 +33,9 @@
 #define CENTISEC_PER_DAY      8640000L
 #define WAIT_VDISP_TIMEOUT_CS 100
 
-static void *const crtc_regs[] = {
-  CRTC_R04, CRTC_R05, CRTC_R06, CRTC_R07
-};
-static uint16_t saved_crtc[4];
-
 static uint8_t read_gpip(void)
 {
   return (uint8_t)_iocs_b_bpeek(MFP_GPIP);
-}
-
-static uint16_t read_crtc(const void *addr)
-{
-  return (uint16_t)_iocs_b_wpeek(addr);
 }
 
 static void write_crtc(void *addr, uint16_t value)
@@ -87,25 +77,6 @@ static int wait_vdisp(void)
   }
 }
 
-static void save_crtc_vertical(void)
-{
-  int i;
-
-  for (i = 0; i < 4; ++i) {
-    saved_crtc[i] = read_crtc(crtc_regs[i]);
-  }
-}
-
-static void restore_crtc_now(void)
-{
-  int i;
-
-  /* Restore the total period before the display positions. */
-  for (i = 0; i < 4; ++i) {
-    write_crtc(crtc_regs[i], saved_crtc[i]);
-  }
-}
-
 /*
  * Set 525 total lines with 480 visible lines.
  * 31.5 kHz / 525 lines is approximately 60 Hz.
@@ -127,18 +98,14 @@ static int set_60hz(void)
   return 0;
 }
 
-static void restore_mode_and_crtc(int mode)
+static void restore_mode(int mode)
 {
   if (mode < 0 || mode > 0x7F) {
     mode = 12;
   }
 
+  /* Re-select the saved IOCS mode; R04-R07 cannot be read back. */
   _iocs_crtmod(mode);
-
-  if (mode == 12) {
-    restore_crtc_now();
-  }
-
   _iocs_g_clr_on();
 }
 
@@ -228,6 +195,10 @@ int main(void)
   struct iocs_time now_time;
   char buf[64];
 
+  /*
+   * Save only the IOCS CRT mode number. Of the CRTC registers, only R20
+   * and R21 retain readable last-written values; R04-R07 return zero.
+   */
   old_mode = _iocs_crtmod(-1);
   _iocs_b_curoff();
   _iocs_os_curof();
@@ -235,7 +206,7 @@ int main(void)
   /* Start from the standard 512 x 512, 65536-color, 31 kHz mode. */
   _iocs_crtmod(12);
   _iocs_g_clr_on();
-  save_crtc_vertical();
+
 
   aborted = set_60hz() != 0;
 
@@ -341,7 +312,7 @@ int main(void)
 
   _iocs_g_clr_on();
   (void)wait_vdisp();
-  restore_mode_and_crtc(old_mode);
+  restore_mode(old_mode);
   _iocs_os_curon();
   _iocs_b_curon();
 

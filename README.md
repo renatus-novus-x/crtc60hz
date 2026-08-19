@@ -14,11 +14,6 @@ An X68000/Human68k C program that generates a 525-line, approximately 60 Hz
 vertical refresh in 31 kHz mode and measures the actual rate using V-DISP and
 IOCS `_ONTIME`.
 
-> [!NOTE]
-> WebX68k can launch the prebuilt disk image for demonstration, but its CRTC and
-> V-DISP timing is not currently accurate enough for validating the measured
-> refresh rate. Use real X68000 hardware, XEiJ, or XM6 TypeG for timing checks.
-
 ## What it does
 
 The standard X68000 512 x 512 / 31 kHz mode runs at approximately 55.5 Hz.
@@ -57,12 +52,21 @@ Expected results:
 Standard mode: 600 V-DISP in approximately 10.82 seconds = 55.5 Hz
 ```
 
-## Safety and restoration
+## Safety and IOCS mode re-selection
 
-Before changing the display timing, the program saves CRTC R04-R07 and the
-current IOCS CRT mode. Normal completion, ESC cancellation, and V-DISP timeout
-all restore the saved CRTC registers and screen mode before returning to
-Human68k.
+Among the X680x0 CRTC registers, only R20 and R21 retain readable
+last-written values. R04-R07 return zero when read, so their current values
+cannot be saved by this program. Instead, the program saves only the current
+IOCS CRT mode number with `_CRTMOD`. Normal completion, ESC cancellation, and V-DISP timeout all
+re-select the saved IOCS CRT mode before returning to Human68k.
+
+This restores the standard CRTC settings associated with that IOCS mode. It
+cannot exactly restore custom R04-R07 timing configured by another application
+before this program started.
+
+The implementation and documentation were corrected after feedback on X
+pointed out the read restrictions of R04-R07. We appreciate this important
+technical correction.
 
 Changing CRTC timing can produce an unsupported video signal. Use a display and
 connection known to support the X68000 31 kHz mode, and test on real hardware at
@@ -110,6 +114,6 @@ ordinary `.zip` files are ignored by Git.
 ## Tested environments
 
 Approximately 60 Hz operation and safe screen restoration have been confirmed
-on real X68000 hardware, XEiJ, and XM6 TypeG. WebX68k and MPX68K currently need
-more accurate coupling between CRTC-derived timing, V-DISP, and host-side frame
-pacing.
+on real X68000 hardware, XEiJ, XM6 TypeG, and WebX68k. WebX68k confirmation was
+performed after the CRTC-derived timing change was merged into px68k-libretro
+in [pull request #1](https://github.com/uraraworks/px68k-libretro/pull/1).
